@@ -6,6 +6,8 @@ import { recordAudit } from "./audit.service";
 import { generateSlotBoundaries, isOnGeneratedBoundary } from "../utils/slots";
 import type { WorkingHours } from "./doctor.service";
 import { enqueuePreVisitSummaryJob, enqueuePostVisitSummaryJob } from "./llm.service";
+import { createMedication } from "./medication.service";
+import type { FrequencyType } from "@prisma/client";
 import {
   enqueueBookingConfirmation,
   enqueueCancellationNotice,
@@ -219,6 +221,7 @@ export async function cancelAppointment(params: {
 
   await enqueueCancellationNotice(cancelled.id, cancelled.cancelReason ?? "PATIENT_CANCELLED");
   await calendarQueue.add("sync", { appointmentId: cancelled.id, action: "delete" });
+  await offerToWaitlist(cancelled.doctorId, cancelled.startTime);
 
   await recordAudit({
     userId: params.actingUserId,
@@ -286,11 +289,21 @@ export async function rescheduleAppointment(params: {
 // in the medication-reminders build phase (task 9), which owns that table.
 // ─────────────────────────────────────────────────────────────
 
+export interface PrescribedMedication {
+  name: string;
+  dosage: string;
+  frequencyType: FrequencyType;
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string;
+  instructions?: string;
+}
+
 export async function completeVisit(params: {
   appointmentId: string;
   doctorId: string;
   clinicalNotes: string;
   recommendedFollowUpDate?: string; // "YYYY-MM-DD"
+  medications?: PrescribedMedication[];
 }) {
   const existing = await prisma.appointment.findUnique({ where: { id: params.appointmentId } });
   if (!existing || existing.doctorId !== params.doctorId) {
@@ -321,6 +334,13 @@ export async function completeVisit(params: {
   });
 
   await enqueuePostVisitSummaryJob(appointment.id);
+
+  // Medications are created after the transaction commits, not inside it —
+  // each one also schedules a BullMQ delayed job, and a job scheduling
+  // failure should never unwind an otherwise-successful visit completion.
+  for (const med of params.medications ?? []) {
+    await createMedication({ appointmentId: appointment.id, ...med });
+  }
 
   await recordAudit({
     userId: params.doctorId,
@@ -356,6 +376,7 @@ export async function applyLeaveConflicts(params: {
     });
     await enqueueLeaveNotice(appt.id);
     await calendarQueue.add("sync", { appointmentId: appt.id, action: "delete" });
+    await offerToWaitlist(appt.doctorId, appt.startTime);
     await recordAudit({
       userId: params.adminId,
       action: "ADMIN_LEAVE_CANCELLED_APPOINTMENT",
@@ -366,6 +387,23 @@ export async function applyLeaveConflicts(params: {
   }
 
   return affected.length;
+}
+
+/**
+ * Lazily imported — waitlist.service.ts imports holdSlot from this file,
+ * so a static top-level import here would create a circular require.
+ * Deferring it to call time avoids that without a bigger restructure.
+ */
+async function offerToWaitlist(doctorUserId: string, slotStart: Date) {
+  const doctorProfile = await prisma.doctorProfile.findUnique({ where: { userId: doctorUserId } });
+  if (!doctorProfile) return;
+
+  const { offerFreedSlotToWaitlist } = await import("./waitlist.service");
+  await offerFreedSlotToWaitlist({
+    doctorProfileId: doctorProfile.id,
+    doctorUserId,
+    slotStart,
+  });
 }
 
 export { AppointmentError };
