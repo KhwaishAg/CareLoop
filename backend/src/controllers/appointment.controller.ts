@@ -11,6 +11,7 @@ import {
   completeVisit,
   AppointmentError,
 } from "../services/appointment.service";
+import { getFollowUpStatus, getFollowUpRollup } from "../services/followup.service";
 
 const holdSchema = z.object({
   doctorProfileId: z.string().min(1),
@@ -27,9 +28,27 @@ const rescheduleSchema = z.object({
   newStartTime: z.string().datetime(),
 });
 
+const medicationSchema = z.object({
+  name: z.string().min(1),
+  dosage: z.string().min(1),
+  frequencyType: z.enum([
+    "ONCE_DAILY",
+    "TWICE_DAILY",
+    "THRICE_DAILY",
+    "EVERY_6_HOURS",
+    "EVERY_8_HOURS",
+    "EVERY_12_HOURS",
+    "AS_NEEDED",
+  ]),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  instructions: z.string().optional(),
+});
+
 const completeVisitSchema = z.object({
   clinicalNotes: z.string().min(3, "Clinical notes can't be empty"),
   recommendedFollowUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  medications: z.array(medicationSchema).optional(),
 });
 
 function handleAppointmentError(err: unknown, res: Response) {
@@ -125,11 +144,24 @@ export async function complete(req: AuthedRequest, res: Response) {
       doctorId: req.user!.id,
       clinicalNotes: parsed.data.clinicalNotes,
       recommendedFollowUpDate: parsed.data.recommendedFollowUpDate,
+      medications: parsed.data.medications,
     });
     return res.json({ appointment });
   } catch (err) {
     return handleAppointmentError(err, res);
   }
+}
+
+export async function followUpStatus(req: AuthedRequest, res: Response) {
+  const result = await getFollowUpStatus(req.params.id);
+  return res.json(result);
+}
+
+/** Doctor sees their own rollup; admin can see everyone's by omitting the filter. */
+export async function followUpRollup(req: AuthedRequest, res: Response) {
+  const doctorId = req.user!.role === "DOCTOR" ? req.user!.id : undefined;
+  const rollup = await getFollowUpRollup(doctorId);
+  return res.json({ rollup });
 }
 
 /** Patient's own appointments, or a doctor's own schedule — same endpoint,
