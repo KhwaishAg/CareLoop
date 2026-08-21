@@ -114,6 +114,7 @@ model User {
   notifications        Notification[]
   calendarEvents       CalendarEvent[]
   auditLogs            AuditLog[]
+  googleCalendarAuth   GoogleCalendarAuth?
 
   @@index([role])
 }
@@ -315,6 +316,22 @@ model CalendarEvent {
   createdAt DateTime @default(now())
 
   @@unique([appointmentId, userId])
+}
+
+// One doctor's OAuth grant for their own Google Calendar. Design choice
+// (see design-writeup.md "Calendar integration"): events live on the
+// DOCTOR's calendar with the patient added as an attendee, so only
+// doctors need to connect — a patient never has to OAuth into anything
+// just to book an appointment, they get a normal calendar-invite email.
+model GoogleCalendarAuth {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String
+  refreshToken String
+  expiryDate   DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────

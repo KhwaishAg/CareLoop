@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { env } from "../lib/env";
-import { holdExpiryQueue } from "../jobs/queues";
+import { holdExpiryQueue, calendarQueue } from "../jobs/queues";
 import { recordAudit } from "./audit.service";
 import { generateSlotBoundaries, isOnGeneratedBoundary } from "../utils/slots";
 import type { WorkingHours } from "./doctor.service";
@@ -179,6 +179,7 @@ export async function confirmBooking(params: {
 
   await enqueuePreVisitSummaryJob(appointment.id);
   await enqueueBookingConfirmation(appointment.id);
+  await calendarQueue.add("sync", { appointmentId: appointment.id, action: "create" });
 
   await recordAudit({
     userId: params.patientId,
@@ -217,6 +218,7 @@ export async function cancelAppointment(params: {
   if (holdJob) await holdJob.remove();
 
   await enqueueCancellationNotice(cancelled.id, cancelled.cancelReason ?? "PATIENT_CANCELLED");
+  await calendarQueue.add("sync", { appointmentId: cancelled.id, action: "delete" });
 
   await recordAudit({
     userId: params.actingUserId,
@@ -300,6 +302,7 @@ export async function applyLeaveConflicts(params: {
       data: { status: "CANCELLED", cancelReason: "DOCTOR_LEAVE" },
     });
     await enqueueLeaveNotice(appt.id);
+    await calendarQueue.add("sync", { appointmentId: appt.id, action: "delete" });
     await recordAudit({
       userId: params.adminId,
       action: "ADMIN_LEAVE_CANCELLED_APPOINTMENT",

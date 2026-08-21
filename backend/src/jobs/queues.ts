@@ -9,6 +9,7 @@ export const holdExpiryQueue = new Queue("hold-expiry", { connection: redisConne
 export const llmQueue = new Queue("llm-jobs", { connection: redisConnection });
 export const notificationQueue = new Queue("notifications", { connection: redisConnection });
 export const medicationQueue = new Queue("medication-reminders", { connection: redisConnection });
+export const calendarQueue = new Queue("calendar-sync", { connection: redisConnection });
 
 const defaultBackoff = {
   attempts: 3,

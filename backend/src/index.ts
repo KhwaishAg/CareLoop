@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes";
 import doctorRoutes from "./routes/doctor.routes";
 import adminRoutes from "./routes/admin.routes";
 import appointmentRoutes from "./routes/appointment.routes";
+import calendarRoutes from "./routes/calendar.routes";
 
 const app = express();
 
@@ -21,8 +22,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/appointments", appointmentRoutes);
-
-// TODO (later build phases): calendar routes
+app.use("/api/calendar", calendarRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.path}` });
