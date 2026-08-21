@@ -1,0 +1,336 @@
+// Healthcare Appointment & Follow-up Manager
+// See /docs/design-writeup.md for the reasoning behind the state machine
+// and the partial unique index below.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum Language {
+  EN
+  HI
+  TA
+  TE
+}
+
+enum AppointmentStatus {
+  HELD // temporary slot hold, not yet confirmed by the patient
+  BOOKED
+  COMPLETED
+  CANCELLED
+}
+
+enum CancelReason {
+  PATIENT_CANCELLED
+  DOCTOR_LEAVE
+  RESCHEDULED
+  HOLD_EXPIRED
+}
+
+enum AiStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum FrequencyType {
+  ONCE_DAILY
+  TWICE_DAILY
+  THRICE_DAILY
+  EVERY_6_HOURS
+  EVERY_8_HOURS
+  EVERY_12_HOURS
+  AS_NEEDED
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  APPOINTMENT_REMINDER
+  CANCELLATION
+  MEDICATION_REMINDER
+  WAITLIST_OFFER
+  LEAVE_NOTICE
+}
+
+enum NotificationChannel {
+  EMAIL
+  CALENDAR
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum WaitlistStatus {
+  WAITING
+  OFFERED
+  CLAIMED
+  EXPIRED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Core identity
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String
+  role              Role
+  name              String
+  phone             String?
+  preferredLanguage Language @default(EN)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  doctorProfile        DoctorProfile?
+  patientAppointments  Appointment[]  @relation("PatientAppointments")
+  doctorAppointments   Appointment[]  @relation("DoctorAppointments")
+  patientWaitlist      Waitlist[]     @relation("PatientWaitlist")
+  doctorWaitlist       Waitlist[]     @relation("DoctorWaitlist")
+  notifications        Notification[]
+  calendarEvents       CalendarEvent[]
+  auditLogs            AuditLog[]
+
+  @@index([role])
+}
+
+model DoctorProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialisation  String
+  // { "mon": ["09:00","17:00"], "tue": [...], ... } — see README for shape
+  workingHours    Json
+  slotDurationMin Int      @default(30)
+  createdAt       DateTime @default(now())
+
+  leaveDays LeaveDay[]
+
+  @@index([specialisation])
+}
+
+model LeaveDay {
+  id       String        @id @default(cuid())
+  doctorId String
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date     DateTime      @db.Date
+  reason   String?
+
+  @@unique([doctorId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Appointment lifecycle
+// ─────────────────────────────────────────────────────────────
+
+model Appointment {
+  id        String            @id @default(cuid())
+  patientId String
+  patient   User              @relation("PatientAppointments", fields: [patientId], references: [id])
+  doctorId  String
+  doctor    User              @relation("DoctorAppointments", fields: [doctorId], references: [id])
+
+  startTime DateTime
+  endTime   DateTime
+
+  status       AppointmentStatus @default(HELD)
+  cancelReason CancelReason?
+
+  // RESCHEDULED is not a status — the original row is CANCELLED with
+  // cancelReason RESCHEDULED, and these two fields link it to its
+  // replacement so history stays intact without a fake terminal state.
+  rescheduledFromId String?      @unique
+  rescheduledFrom   Appointment? @relation("Reschedule", fields: [rescheduledFromId], references: [id])
+  rescheduledTo     Appointment? @relation("Reschedule")
+
+  holdExpiresAt          DateTime?
+  recommendedFollowUpDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  symptomForm    SymptomForm?
+  visitNote      VisitNote?
+  medications    Medication[]
+  notifications  Notification[]
+  calendarEvents CalendarEvent[]
+
+  @@index([doctorId, startTime])
+  @@index([patientId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI-assisted forms
+// ─────────────────────────────────────────────────────────────
+
+model SymptomForm {
+  id            String   @id @default(cuid())
+  appointmentId String   @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  rawSymptoms String
+  language    Language @default(EN)
+
+  // Deterministic safety signal layer (runs before the LLM call)
+  safetySignalFlagged Boolean @default(false)
+  safetySignalReason  String?
+
+  // LLM output — structured, no exposed chain-of-thought
+  urgency            Urgency?
+  urgencyFactors     Json? // string[]
+  chiefComplaint     String?
+  suggestedQuestions Json? // string[3]
+
+  // { newSymptoms: string[], resolvedSymptoms: string[],
+  //   ongoingSymptoms: string[], summary: string } | null
+  changeFromLastVisit Json?
+
+  status    AiStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VisitNote {
+  id            String      @id @default(cuid())
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  clinicalNotes String
+
+  // LLM output
+  patientSummary String?
+  medicationSchedule String?
+  followUpSteps  String?
+
+  status    AiStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Medication {
+  id            String      @id @default(cuid())
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  name          String
+  dosage        String
+  frequencyType FrequencyType
+  reminderTimes Json // string[] of "HH:MM", computed from frequencyType
+  startDate     DateTime @db.Date
+  endDate       DateTime @db.Date
+  instructions  String?
+
+  nextReminderAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([nextReminderAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Waitlist
+// ─────────────────────────────────────────────────────────────
+
+model Waitlist {
+  id        String   @id @default(cuid())
+  patientId String
+  patient   User     @relation("PatientWaitlist", fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId  String
+  doctor    User     @relation("DoctorWaitlist", fields: [doctorId], references: [id], onDelete: Cascade)
+
+  preferredDate      DateTime @db.Date
+  preferredStartTime String // "HH:MM"
+  preferredEndTime   String // "HH:MM"
+
+  status    WaitlistStatus @default(WAITING)
+  createdAt DateTime       @default(now())
+
+  @@index([doctorId, preferredDate, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  type    NotificationType
+  channel NotificationChannel
+
+  // e.g. "BOOKING_CONFIRMATION:appointment123:patient456" — prevents a
+  // crashed-then-retried worker from sending the same email twice.
+  idempotencyKey String @unique
+
+  status    NotificationStatus @default(PENDING)
+  attempts  Int                @default(0)
+  lastError String?
+  sentAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  @@index([status])
+}
+
+model CalendarEvent {
+  id            String      @id @default(cuid())
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  googleEventId String?
+  status        String // "synced" | "pending" | "error" | "deleted"
+  lastSyncedAt  DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([appointmentId, userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Audit trail — separate from operational records on purpose
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String // e.g. "ADMIN_MARKED_LEAVE", "PATIENT_BOOKED_APPOINTMENT"
+  entity    String // e.g. "Appointment"
+  entityId  String?
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+}
