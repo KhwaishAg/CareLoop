@@ -8,8 +8,8 @@
 import "./lib/env";
 import "./jobs/hold-expiry.worker";
 import "./jobs/calendar.worker";
-// TODO: import "./jobs/llm.worker"          (task 7 — AI layer)
-// TODO: import "./jobs/email.worker"        (task 8 — notifications)
+import "./jobs/llm.worker";
+import "./jobs/email.worker";
 // TODO: import "./jobs/medication.worker"   (task 9 — medication reminders)
 
-console.log("Workers started: hold-expiry, calendar-sync");
+console.log("Workers started: hold-expiry, calendar-sync, llm-jobs, notifications");

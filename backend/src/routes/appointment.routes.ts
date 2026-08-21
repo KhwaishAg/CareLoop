@@ -6,6 +6,7 @@ import {
   confirm,
   cancel,
   reschedule,
+  complete,
   listMyAppointments,
 } from "../controllers/appointment.controller";
 
@@ -20,5 +21,6 @@ router.post("/hold", requireRole("PATIENT"), hold);
 router.post("/:id/confirm", requireRole("PATIENT"), confirm);
 router.post("/:id/cancel", requireRole("PATIENT", "DOCTOR", "ADMIN"), cancel);
 router.post("/:id/reschedule", requireRole("PATIENT"), reschedule);
+router.post("/:id/complete", requireRole("DOCTOR"), complete);
 
 export default router;

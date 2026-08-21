@@ -8,6 +8,7 @@ import {
   confirmBooking,
   cancelAppointment,
   rescheduleAppointment,
+  completeVisit,
   AppointmentError,
 } from "../services/appointment.service";
 
@@ -24,6 +25,11 @@ const confirmSchema = z.object({
 const rescheduleSchema = z.object({
   doctorProfileId: z.string().min(1),
   newStartTime: z.string().datetime(),
+});
+
+const completeVisitSchema = z.object({
+  clinicalNotes: z.string().min(3, "Clinical notes can't be empty"),
+  recommendedFollowUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 function handleAppointmentError(err: unknown, res: Response) {
@@ -102,6 +108,23 @@ export async function reschedule(req: AuthedRequest, res: Response) {
       patientId: req.user!.id,
       newStartTime: parsed.data.newStartTime,
       doctorProfileId: parsed.data.doctorProfileId,
+    });
+    return res.json({ appointment });
+  } catch (err) {
+    return handleAppointmentError(err, res);
+  }
+}
+
+export async function complete(req: AuthedRequest, res: Response) {
+  const parsed = completeVisitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+  try {
+    const appointment = await completeVisit({
+      appointmentId: req.params.id,
+      doctorId: req.user!.id,
+      clinicalNotes: parsed.data.clinicalNotes,
+      recommendedFollowUpDate: parsed.data.recommendedFollowUpDate,
     });
     return res.json({ appointment });
   } catch (err) {

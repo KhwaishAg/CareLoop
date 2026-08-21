@@ -5,7 +5,7 @@ import { holdExpiryQueue, calendarQueue } from "../jobs/queues";
 import { recordAudit } from "./audit.service";
 import { generateSlotBoundaries, isOnGeneratedBoundary } from "../utils/slots";
 import type { WorkingHours } from "./doctor.service";
-import { enqueuePreVisitSummaryJob } from "./llm.service";
+import { enqueuePreVisitSummaryJob, enqueuePostVisitSummaryJob } from "./llm.service";
 import {
   enqueueBookingConfirmation,
   enqueueCancellationNotice,
@@ -277,6 +277,59 @@ export async function rescheduleAppointment(params: {
   });
 
   return rebooked;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Completing a visit — doctor submits clinical notes (+ optional follow-up
+// date), which both marks the appointment COMPLETED and triggers the
+// post-visit LLM summary. Prescriptions/medications are handled separately
+// in the medication-reminders build phase (task 9), which owns that table.
+// ─────────────────────────────────────────────────────────────
+
+export async function completeVisit(params: {
+  appointmentId: string;
+  doctorId: string;
+  clinicalNotes: string;
+  recommendedFollowUpDate?: string; // "YYYY-MM-DD"
+}) {
+  const existing = await prisma.appointment.findUnique({ where: { id: params.appointmentId } });
+  if (!existing || existing.doctorId !== params.doctorId) {
+    throw new AppointmentError("Appointment not found", 404);
+  }
+  if (existing.status !== "BOOKED") {
+    throw new AppointmentError("Only a booked appointment can be completed", 409);
+  }
+
+  const appointment = await prisma.$transaction(async (tx) => {
+    const updated = await tx.appointment.update({
+      where: { id: params.appointmentId },
+      data: {
+        status: "COMPLETED",
+        recommendedFollowUpDate: params.recommendedFollowUpDate
+          ? new Date(params.recommendedFollowUpDate)
+          : undefined,
+      },
+    });
+
+    await tx.visitNote.upsert({
+      where: { appointmentId: updated.id },
+      update: { clinicalNotes: params.clinicalNotes, status: "PENDING" },
+      create: { appointmentId: updated.id, clinicalNotes: params.clinicalNotes },
+    });
+
+    return updated;
+  });
+
+  await enqueuePostVisitSummaryJob(appointment.id);
+
+  await recordAudit({
+    userId: params.doctorId,
+    action: "DOCTOR_COMPLETED_VISIT",
+    entity: "Appointment",
+    entityId: appointment.id,
+  });
+
+  return appointment;
 }
 
 // ─────────────────────────────────────────────────────────────
