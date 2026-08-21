@@ -10,6 +10,6 @@ import "./jobs/hold-expiry.worker";
 import "./jobs/calendar.worker";
 import "./jobs/llm.worker";
 import "./jobs/email.worker";
-// TODO: import "./jobs/medication.worker"   (task 9 — medication reminders)
+import "./jobs/medication.worker";
 
-console.log("Workers started: hold-expiry, calendar-sync, llm-jobs, notifications");
+console.log("Workers started: hold-expiry, calendar-sync, llm-jobs, notifications, medication-reminders");
