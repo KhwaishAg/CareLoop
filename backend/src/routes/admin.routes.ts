@@ -7,6 +7,7 @@ import {
   adminRemoveLeave,
   previewLeaveImpact,
 } from "../controllers/doctor.controller";
+import { listNotifications, listWaitlist } from "../controllers/ops.controller";
 
 const router = Router();
 
@@ -20,5 +21,8 @@ router.put("/doctors/:id", adminUpdateDoctor);
 router.post("/doctors/:id/leave/preview", previewLeaveImpact);
 router.post("/doctors/:id/leave", adminAddLeave);
 router.delete("/doctors/:id/leave/:leaveId", adminRemoveLeave);
+
+router.get("/notifications", listNotifications);
+router.get("/waitlist", listWaitlist);
 
 export default router;
