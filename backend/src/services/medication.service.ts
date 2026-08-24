@@ -90,10 +90,13 @@ async function scheduleReminderJob(medicationId: string, at: Date) {
   const delayMs = Math.max(0, at.getTime() - Date.now());
   // jobId includes the scheduled time so a duplicate schedule call for the
   // same occurrence (e.g. a retried request) can't double-enqueue it.
+  // BullMQ rejects ":" in custom job ids, so the ISO timestamp (which is
+  // full of them) gets stripped down to digits before use.
+  const idSafeTimestamp = at.toISOString().replace(/[^0-9]/g, "");
   await medicationQueue.add(
     "reminder",
     { medicationId },
-    { delay: delayMs, jobId: `${medicationId}:${at.toISOString()}` }
+    { delay: delayMs, jobId: `${medicationId}-${idSafeTimestamp}` }
   );
 }
 

@@ -41,10 +41,15 @@ async function enqueue(params: {
 
   if (notification.status === "SENT") return;
 
+  // BullMQ rejects ":" in a custom job id, so the DB's idempotencyKey
+  // (which needs to stay readable, hence the colons) isn't reused verbatim
+  // here — same uniqueness, just underscore-separated.
+  const jobId = idempotencyKey.replace(/:/g, "_");
+
   await notificationQueue.add(
     params.type,
     { notificationId: notification.id },
-    { jobId: idempotencyKey, delay: params.delayMs, ...jobDefaults }
+    { jobId, delay: params.delayMs, ...jobDefaults }
   );
 }
 
