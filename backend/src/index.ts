@@ -7,6 +7,7 @@ import adminRoutes from "./routes/admin.routes";
 import appointmentRoutes from "./routes/appointment.routes";
 import calendarRoutes from "./routes/calendar.routes";
 import waitlistRoutes from "./routes/waitlist.routes";
+import medicineRoutes from "./routes/medicine.routes";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/calendar", calendarRoutes);
 app.use("/api/waitlist", waitlistRoutes);
+app.use("/api/medicines", medicineRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: `No route for ${req.method} ${req.path}` });

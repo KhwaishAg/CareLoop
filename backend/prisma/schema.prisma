@@ -335,6 +335,25 @@ model GoogleCalendarAuth {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Medicine catalog — a starter list so a doctor completing a visit picks
+// from known medicines instead of typing every name from scratch each
+// time. Deliberately just a name + suggested dosages/frequency, not a
+// full drug database (interactions, contraindications, etc. are out of
+// scope for this assignment) — it's a typing aid, not a formulary.
+// ─────────────────────────────────────────────────────────────
+
+model MedicineCatalog {
+  id               String         @id @default(cuid())
+  name             String         @unique
+  category         String?
+  commonDosages    String[] // e.g. ["250mg", "500mg"] — shown as quick picks once a name is chosen
+  defaultFrequency FrequencyType?
+  createdAt        DateTime       @default(now())
+
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────────────────────
 // Audit trail — separate from operational records on purpose
 // ─────────────────────────────────────────────────────────────
 
