@@ -1,0 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f7f6f2;
+  --bg-raised: #fffefb;
+  --ink: #171918;
+  --ink-soft: #6b6f68;
+  --line: #e4e1d8;
+  --accent: #167c72;
+  --accent-soft: #dcedea;
+  --amber: #c58a27;
+  --amber-soft: #f6ecd8;
+  --critical: #b94a48;
+  --critical-soft: #f6e2e1;
+}
+
+/* System preference — applies only when the visitor hasn't made an explicit
+   choice via the in-app toggle (ThemeProvider stamps data-theme once it has). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14201d;
+    --bg-raised: #1a2622;
+    --ink: #ece8de;
+    --ink-soft: #9aa39c;
+    --line: #2c3833;
+    --accent: #4fb3a3;
+    --accent-soft: #1e332f;
+    --amber: #e0a94f;
+    --amber-soft: #33291a;
+    --critical: #e0827f;
+    --critical-soft: #3a2321;
+  }
+}
+
+/* Explicit choice — wins over system preference in both directions. */
+:root[data-theme="dark"] {
+  --bg: #14201d;
+  --bg-raised: #1a2622;
+  --ink: #ece8de;
+  --ink-soft: #9aa39c;
+  --line: #2c3833;
+  --accent: #4fb3a3;
+  --accent-soft: #1e332f;
+  --amber: #e0a94f;
+  --amber-soft: #33291a;
+  --critical: #e0827f;
+  --critical-soft: #3a2321;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Status strips — see waitlist/notification/admin "status language" cues */
+.status-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
