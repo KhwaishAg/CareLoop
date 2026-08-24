@@ -7,7 +7,7 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
   GEMINI_API_KEY: z.string().optional(), // optional so the app still boots pre-key; LLM jobs fall back gracefully
-  GEMINI_MODEL: z.string().default("gemini-1.5-flash"),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(465),
   SMTP_USER: z.string().optional(),

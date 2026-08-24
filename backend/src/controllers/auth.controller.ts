@@ -2,11 +2,14 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { registerUser, loginUser } from "../services/auth.service";
 
+// Public self-registration is PATIENT-only, always — role is never taken
+// from the request body. Doctor and admin accounts are created out-of-band
+// (seed script, or an admin-only endpoint), so nobody can grant themselves
+// elevated access by posting a different "role" value here.
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters"),
   name: z.string().min(1),
-  role: z.enum(["PATIENT", "DOCTOR", "ADMIN"]),
   phone: z.string().optional(),
   preferredLanguage: z.enum(["EN", "HI", "TA", "TE"]).optional(),
 });
@@ -23,7 +26,7 @@ export async function register(req: Request, res: Response) {
   }
 
   try {
-    const user = await registerUser(parsed.data);
+    const user = await registerUser({ ...parsed.data, role: "PATIENT" });
     return res.status(201).json({
       user: { id: user.id, email: user.email, name: user.name, role: user.role },
     });
