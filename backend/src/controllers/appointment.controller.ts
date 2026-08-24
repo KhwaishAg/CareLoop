@@ -12,6 +12,8 @@ import {
   AppointmentError,
 } from "../services/appointment.service";
 import { getFollowUpStatus, getFollowUpRollup } from "../services/followup.service";
+import { assistSymptomDescription, SymptomTooShortError } from "../services/llm.service";
+import { LlmNotConfiguredError, LlmCallFailedError } from "../lib/gemini";
 
 const holdSchema = z.object({
   doctorProfileId: z.string().min(1),
@@ -49,6 +51,11 @@ const completeVisitSchema = z.object({
   clinicalNotes: z.string().min(3, "Clinical notes can't be empty"),
   recommendedFollowUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   medications: z.array(medicationSchema).optional(),
+});
+
+const symptomAssistSchema = z.object({
+  rawSymptoms: z.string().min(1),
+  language: z.enum(["EN", "HI", "TA", "TE"]).default("EN"),
 });
 
 function handleAppointmentError(err: unknown, res: Response) {
@@ -164,6 +171,34 @@ export async function followUpRollup(req: AuthedRequest, res: Response) {
   return res.json({ rollup });
 }
 
+/** Called from the booking form's "Help me phrase this" button — a
+ *  synchronous, user-triggered Gemini call so the patient sees a result
+ *  while they're still on the page, not a background job. Never touches
+ *  the DB; failures are reported plainly so the patient can just keep
+ *  typing their own version instead. */
+export async function symptomAssist(req: AuthedRequest, res: Response) {
+  const parsed = symptomAssistSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+  try {
+    const result = await assistSymptomDescription(parsed.data.rawSymptoms, parsed.data.language);
+    return res.json(result);
+  } catch (err) {
+    if (err instanceof SymptomTooShortError) {
+      return res.status(400).json({ error: "Write a few words about what's going on first." });
+    }
+    if (err instanceof LlmNotConfiguredError) {
+      return res.status(503).json({ error: "AI assist isn't set up on this server yet." });
+    }
+    if (err instanceof LlmCallFailedError) {
+      console.error("[llm] symptom assist failed", err.message);
+      return res.status(502).json({ error: "AI assist is having trouble right now — try again in a moment." });
+    }
+    console.error("[llm] symptom assist unexpected error", err);
+    return res.status(500).json({ error: "Something went wrong." });
+  }
+}
+
 /** Patient's own appointments, or a doctor's own schedule — same endpoint,
  *  scoped by the caller's role. */
 export async function listMyAppointments(req: AuthedRequest, res: Response) {
@@ -176,6 +211,7 @@ export async function listMyAppointments(req: AuthedRequest, res: Response) {
       doctor: { select: { id: true, name: true } },
       symptomForm: true,
       visitNote: true,
+      medications: true,
     },
     orderBy: { startTime: "desc" },
   });

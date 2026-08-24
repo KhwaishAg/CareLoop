@@ -27,6 +27,13 @@ export async function enqueuePostVisitSummaryJob(appointmentId: string): Promise
 // Pre-visit summary
 // ─────────────────────────────────────────────────────────────
 
+// The LLM is prompted in Title Case ("Low"/"Medium"/"High") because that
+// reads naturally in a prompt, but Prisma's Urgency enum is uppercase
+// ("LOW"/"MEDIUM"/"HIGH") — this bridges the two so a write never fails.
+function toUrgencyEnum(u: "Low" | "Medium" | "High"): "LOW" | "MEDIUM" | "HIGH" {
+  return u.toUpperCase() as "LOW" | "MEDIUM" | "HIGH";
+}
+
 const preVisitResponseSchema = z.object({
   urgency: z.enum(["Low", "Medium", "High"]),
   urgencyFactors: z.array(z.string()).max(5),
@@ -112,7 +119,7 @@ export async function processPreVisitSummary(appointmentId: string): Promise<voi
       data: {
         safetySignalFlagged: safety.flagged,
         safetySignalReason: safety.reason,
-        urgency: finalUrgency,
+        urgency: toUrgencyEnum(finalUrgency),
         urgencyFactors: parsed.urgencyFactors,
         chiefComplaint: parsed.chiefComplaint,
         suggestedQuestions: parsed.suggestedQuestions,
@@ -131,11 +138,57 @@ export async function processPreVisitSummary(appointmentId: string): Promise<voi
       data: {
         safetySignalFlagged: safety.flagged,
         safetySignalReason: safety.reason,
-        urgency: safety.flagged ? "High" : undefined,
+        urgency: safety.flagged ? "HIGH" : undefined,
         status: "FAILED",
       },
     });
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Symptom-entry assist — a synchronous, user-triggered call (not queued)
+// that helps a patient turn rough notes into a clearer description WHILE
+// they're still on the booking form, before anything is submitted. Kept
+// separate from the pre-visit summary job: this one never touches the DB
+// and must respond fast enough to feel like an in-form assist, not a
+// background job the patient waits on.
+// ─────────────────────────────────────────────────────────────
+
+const symptomAssistResponseSchema = z.object({
+  improved: z.string(),
+  clarifyingQuestions: z.array(z.string()).max(3),
+});
+
+const SYMPTOM_ASSIST_SYSTEM_INSTRUCTION = `You help patients describe their symptoms more clearly before a doctor's visit. You only reorganize and clarify what the patient already wrote — you never invent symptoms, never add severity or duration the patient didn't mention, and never diagnose or suggest treatment. Respond with ONLY valid JSON matching the requested schema, no markdown formatting, no commentary.`;
+
+function buildSymptomAssistPrompt(rawSymptoms: string, language: string): string {
+  const languageName = LANGUAGE_NAMES[language] ?? "English";
+  return `The patient typed the following, in ${languageName}, describing why they want to see a doctor. It may be short, informal, or use shorthand.
+
+"${rawSymptoms}"
+
+Return JSON with exactly these fields:
+- improved: a clearer, complete version of what the patient wrote, in ${languageName}, still in the patient's own voice (first person). Keep every fact they gave — don't add new symptoms, don't guess duration or severity they didn't state.
+- clarifyingQuestions: up to 3 short questions that would help the patient add useful detail (e.g. "How long has this been going on?", "Is the pain constant or does it come and go?"). Return fewer than 3 if the description is already detailed, or an empty array if nothing more is needed.`;
+}
+
+export class SymptomTooShortError extends Error {}
+
+/** Throws on any failure (not-configured, timeout, bad JSON) — the caller
+ *  (the controller) is expected to surface a plain "try again" message
+ *  rather than let the patient's typing be interrupted by a stack trace. */
+export async function assistSymptomDescription(
+  rawSymptoms: string,
+  language: string
+): Promise<{ improved: string; clarifyingQuestions: string[] }> {
+  if (rawSymptoms.trim().length < 3) throw new SymptomTooShortError();
+
+  const raw = await callGemini({
+    systemInstruction: SYMPTOM_ASSIST_SYSTEM_INSTRUCTION,
+    prompt: buildSymptomAssistPrompt(rawSymptoms, language),
+  });
+
+  return symptomAssistResponseSchema.parse(raw);
 }
 
 // ─────────────────────────────────────────────────────────────

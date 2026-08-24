@@ -10,6 +10,7 @@ import {
   followUpStatus,
   followUpRollup,
   listMyAppointments,
+  symptomAssist,
 } from "../controllers/appointment.controller";
 
 const router = Router();
@@ -21,6 +22,7 @@ router.get("/mine", listMyAppointments);
 router.get("/follow-ups", requireRole("DOCTOR", "ADMIN"), followUpRollup);
 router.get("/:id/follow-up", followUpStatus);
 
+router.post("/symptom-assist", requireRole("PATIENT"), symptomAssist);
 router.post("/hold", requireRole("PATIENT"), hold);
 router.post("/:id/confirm", requireRole("PATIENT"), confirm);
 router.post("/:id/cancel", requireRole("PATIENT", "DOCTOR", "ADMIN"), cancel);
