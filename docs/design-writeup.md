@@ -1,0 +1,27 @@
+# CareLoop — System Design Write-up
+
+CareLoop is an Express API backed by Postgres (Prisma), with a separate BullMQ/Redis worker for everything that shouldn't block a request: notifications, AI calls, calendar sync, slot-hold expiry. The API writes durable state and hands off rather than doing slow or unreliable work inline. The four mechanisms below are where that split matters most.
+
+## 1. Double-booking prevention
+
+Application-level checks ("query for conflicts, then insert if none") are racy: two requests can both pass the check before either commits. CareLoop pushes the guarantee into the database instead — a **partial unique index** on `Appointment(doctorId, startTime)` scoped to `WHERE status IN ('HELD', 'BOOKED')`. Two patients holding the same slot at once both attempt the insert; Postgres serializes it and only one succeeds. The loser fails with a `23505` unique-violation, surfaced by Prisma as `P2002`. `holdSlot()` catches exactly that code and returns a clean `409 "Sorry, this slot was just taken by another patient"` — no advisory locks, no `SELECT ... FOR UPDATE`, because the one write that decides the outcome is already atomic. The index is partial, not a plain unique constraint, so cancelled/expired rows (status no longer `HELD`/`BOOKED`) don't count against it — a freed slot is immediately re-bookable without a cleanup job running first.
+
+## 2. Slot hold mechanism
+
+Reserving a slot the instant a patient clicks it — before symptoms or confirmation — would let one indecisive patient silently lock out others. So booking is two steps. `holdSlot()` inserts an `Appointment` with `status: HELD` and `holdExpiresAt = now + SLOT_HOLD_MINUTES` (env-configurable, 5 min default) — this is what the unique index above protects, so the hold is real from the first write. It also enqueues a delayed BullMQ job on `holdExpiryQueue` (`delay: SLOT_HOLD_MINUTES * 60_000`, `jobId: appointment.id`, idempotent against duplicate enqueues). If the patient confirms in time, `confirmBooking()` moves `HELD → BOOKED`; the delayed job later fires as a no-op. If not, the job flips the row to `CANCELLED` (`cancelReason: HOLD_EXPIRED`) and the index stops blocking it.
+
+The design question that matters: what if that worker is slow or briefly down — does a patient get blocked from a slot that's actually free? `getAvailableSlots()` doesn't trust the worker; it checks wall-clock time directly, treating any `HELD` row whose `holdExpiresAt` has already passed as free regardless of whether the expiry job has run. The BullMQ job just keeps the table tidy — it is not load-bearing for correctness. A stalled queue can only make expiry visible late to the *original* holder, never block a *different* patient from the same slot.
+
+## 3. Doctor leave conflict handling
+
+Leave has to unwind whatever was already booked against those hours, not just block new bookings. When an admin adds a `LeaveDay`, `applyLeaveConflicts()` finds every `BOOKED` appointment for that doctor on that date and, per appointment: cancels it (`cancelReason: DOCTOR_LEAVE`), enqueues a patient notification, removes the Google Calendar event if one exists, and offers the freed slot to the clinic waitlist (`offerFreedSlotToWaitlist`, imported lazily to break a circular dependency with `waitlist.service.ts`, which itself calls `holdSlot`). Every cancellation is wrapped in `recordAudit`, so a leave day traces back to exactly which bookings it affected.
+
+Applying leave blind would be risky — cancelling a doctor's day shouldn't be a one-way surprise. `previewLeaveImpact()` runs the identical query read-only before commit, so the admin UI shows "this will cancel 4 bookings" and lets them back out, with the real apply step guaranteed to match the preview since it's the same query.
+
+## 4. Notification failure handling
+
+Free-tier SMTP isn't reliable enough to fire-and-forget. `notification.service.ts`'s `enqueue()` writes a `Notification` row — `status: PENDING` — **before** any BullMQ job exists, upserted on a deterministic `idempotencyKey` (`${type}:${appointmentId}:${userId}`). The row is the durable statement of intent; the job is one attempt at fulfilling it. If a row for that key is already `SENT`, `enqueue()` skips re-queuing, so a repeated trigger can never re-send something that already went out.
+
+`email.worker.ts` distinguishes two failure classes. Configuration failures — SMTP not set up, or the appointment/recipient no longer exists — mark the row `FAILED` immediately and return without throwing, since no retry fixes a missing config. Transient send failures update `attempts`/`lastError`, leave `status: PENDING` while retries remain, and re-throw so BullMQ's own backoff (3 attempts, exponential, starting at 60s, defined once as `jobDefaults`) schedules the next attempt; only the final failed attempt is marked `FAILED`. Every `FAILED` row is visible on the admin Notifications page — a real failure becomes a support ticket, not a silent gap.
+
+The one gap that's structurally unavoidable here: a crash between a successful SMTP send and the DB write marking it `SENT` could cause one duplicate email on retry — no free-tier provider offers transactional delivery. What the design guarantees is that this can only ever produce a *duplicate*, never a *silent drop*: nothing retries once its row reads `SENT`, and every notification's true state is always inspectable, never inferred.
