@@ -4,51 +4,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Warm ivory + sage — a calm private-clinic palette, not a tech-dashboard
+   one. Accent is a muted forest/sage green rather than a teal/cyan so it
+   reads as "healthcare" rather than "SaaS product". */
 :root {
-  --bg: #f7f6f2;
-  --bg-raised: #fffefb;
-  --ink: #171918;
-  --ink-soft: #6b6f68;
-  --line: #e4e1d8;
-  --accent: #167c72;
-  --accent-soft: #dcedea;
-  --amber: #c58a27;
-  --amber-soft: #f6ecd8;
-  --critical: #b94a48;
-  --critical-soft: #f6e2e1;
+  --bg: #f7f5f0;
+  --bg-raised: #ffffff;
+  --ink: #24312f;
+  --ink-soft: #6b7570;
+  --line: #e6e1d6;
+  --accent: #2e6b5f;
+  --accent-soft: #e6efe9;
+  --amber: #b8823a;
+  --amber-soft: #f5ead6;
+  --critical: #b5514a;
+  --critical-soft: #f5e3e0;
+  --success: #3f7a52;
+  --success-soft: #e5efe6;
 }
 
-/* System preference — applies only when the visitor hasn't made an explicit
-   choice via the in-app toggle (ThemeProvider stamps data-theme once it has). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14201d;
-    --bg-raised: #1a2622;
-    --ink: #ece8de;
-    --ink-soft: #9aa39c;
-    --line: #2c3833;
-    --accent: #4fb3a3;
-    --accent-soft: #1e332f;
-    --amber: #e0a94f;
-    --amber-soft: #33291a;
-    --critical: #e0827f;
-    --critical-soft: #3a2321;
-  }
-}
-
-/* Explicit choice — wins over system preference in both directions. */
+/* Dark is available, but explicit-only — the product's designed default is
+   the warm light theme (see theme.tsx), so this only ever applies once
+   someone deliberately hits the toggle. Deliberately not black/neon — a
+   deep warm charcoal-green, still calm rather than "tech dashboard". */
 :root[data-theme="dark"] {
-  --bg: #14201d;
-  --bg-raised: #1a2622;
-  --ink: #ece8de;
-  --ink-soft: #9aa39c;
-  --line: #2c3833;
-  --accent: #4fb3a3;
-  --accent-soft: #1e332f;
-  --amber: #e0a94f;
-  --amber-soft: #33291a;
-  --critical: #e0827f;
-  --critical-soft: #3a2321;
+  --bg: #1c2422;
+  --bg-raised: #242e2b;
+  --ink: #ece7dc;
+  --ink-soft: #a3aba4;
+  --line: #384440;
+  --accent: #6fae9c;
+  --accent-soft: #2b3a35;
+  --amber: #d6a865;
+  --amber-soft: #3a3122;
+  --critical: #d98d86;
+  --critical-soft: #3f2b28;
+  --success: #7bb890;
+  --success-soft: #263832;
 }
 
 * {
@@ -59,6 +51,16 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {

@@ -15,6 +15,8 @@ export default {
         "amber-soft": "var(--amber-soft)",
         critical: "var(--critical)",
         "critical-soft": "var(--critical-soft)",
+        success: "var(--success)",
+        "success-soft": "var(--success-soft)",
       },
       fontFamily: {
         display: ["Fraunces", "ui-serif", "Georgia", "serif"],

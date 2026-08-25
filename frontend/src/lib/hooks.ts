@@ -39,7 +39,7 @@ export interface Appointment {
   holdExpiresAt: string | null;
   recommendedFollowUpDate: string | null;
   patient: { id: string; name: string };
-  doctor: { id: string; name: string };
+  doctor: { id: string; name: string; doctorProfile: { specialisation: string } | null };
   symptomForm: {
     status: "PENDING" | "READY" | "FAILED";
     rawSymptoms?: string;

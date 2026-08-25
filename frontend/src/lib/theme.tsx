@@ -3,14 +3,14 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 export type Theme = "light" | "dark";
 const STORAGE_KEY = "careloop_theme";
 
-function systemPrefersDark() {
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-}
-
+// The product's designed default is the warm light theme — a healthcare
+// app shouldn't silently open in a dark, tech-dashboard look just because
+// a visitor's OS happens to be set to dark mode. Dark stays one click away
+// via the toggle, and once someone picks it explicitly that choice sticks.
 function getInitialTheme(): Theme {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  return systemPrefersDark() ? "dark" : "light";
+  return "light";
 }
 
 interface ThemeContextValue {

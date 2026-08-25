@@ -8,6 +8,8 @@ export interface AuthUser {
   email: string;
   name: string;
   role: Role;
+  phone?: string | null;
+  preferredLanguage?: string;
 }
 
 export function roleHomePath(role: Role): string {
@@ -26,6 +28,7 @@ interface AuthContextValue {
     preferredLanguage?: string;
   }) => Promise<void>;
   logout: () => void;
+  updateUser: (patch: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -71,8 +74,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  /** Patches the locally-stored user (e.g. after a profile edit) so the
+   *  header and every screen reading useAuth() reflect it immediately,
+   *  without a full re-login. */
+  function updateUser(patch: Partial<AuthUser>) {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      localStorage.setItem("careloop_user", JSON.stringify(next));
+      return next;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
