@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAdminNotifications } from "../../lib/hooks";
 import { StatusPill } from "../../components/StatusPill";
@@ -8,7 +8,20 @@ const FILTERS = ["ALL", "PENDING", "SENT", "FAILED"] as const;
 
 export function AdminNotifications() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("ALL");
-  const { data: notifications, isLoading } = useAdminNotifications(filter === "ALL" ? undefined : filter);
+  // Fetch the full set once so filter chips can show live counts without a
+  // re-fetch per click; filtering happens client-side.
+  const { data: all, isLoading } = useAdminNotifications();
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { ALL: all?.length ?? 0 };
+    for (const s of ["PENDING", "SENT", "FAILED"]) c[s] = (all ?? []).filter((n) => n.status === s).length;
+    return c;
+  }, [all]);
+
+  const notifications = useMemo(
+    () => (all ?? []).filter((n) => filter === "ALL" || n.status === filter),
+    [all, filter]
+  );
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
@@ -23,25 +36,31 @@ export function AdminNotifications() {
         lost.
       </p>
 
-      <div className="mb-8 flex gap-2">
+      <div className="mb-8 flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
-              filter === f ? "border-accent bg-accent-soft text-accent" : "border-line text-ink-soft hover:border-ink-soft"
+              filter === f
+                ? f === "FAILED"
+                  ? "border-critical bg-critical-soft text-critical"
+                  : "border-accent bg-accent-soft text-accent"
+                : "border-line text-ink-soft hover:border-ink-soft"
             }`}
           >
-            {f}
+            {f.charAt(0) + f.slice(1).toLowerCase()} · {counts[f] ?? 0}
           </button>
         ))}
       </div>
 
       {isLoading && <p className="text-ink-soft">Loading…</p>}
-      {notifications?.length === 0 && <p className="text-ink-soft">No notifications match this filter.</p>}
+      {!isLoading && notifications.length === 0 && (
+        <p className="text-ink-soft">No notifications match this filter.</p>
+      )}
 
       <ul className="flex flex-col divide-y divide-line border-y border-line">
-        {notifications?.map((n) => (
+        {notifications.map((n) => (
           <li key={n.id} className="py-4">
             <div className="mb-1 flex items-center justify-between">
               <p className="text-ink">

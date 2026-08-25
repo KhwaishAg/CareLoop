@@ -253,25 +253,79 @@ export function AdminDoctorLeave() {
         )}
       </section>
 
-      <p className="mb-4 font-mono text-xs uppercase tracking-wide text-ink-soft">Scheduled leave</p>
-      {doctor.leaveDays?.length === 0 && <p className="text-ink-soft">No leave days scheduled.</p>}
-      <ul className="flex flex-col divide-y divide-line border-y border-line">
-        {doctor.leaveDays?.map((l) => (
-          <li key={l.id} className="flex items-center justify-between py-4">
-            <div>
-              <p className="text-ink">{new Date(l.date).toLocaleDateString("en-IN", { month: "long", day: "numeric", year: "numeric" })}</p>
-              {l.reason && <p className="text-sm text-ink-soft">{l.reason}</p>}
+      {(() => {
+        const all = doctor.leaveDays ?? [];
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const upcoming = all
+          .filter((l) => new Date(l.date) >= startOfToday)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        const past = all
+          .filter((l) => new Date(l.date) < startOfToday)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        function Row({ l }: { l: (typeof all)[number] }) {
+          const isToday = new Date(l.date).toDateString() === now.toDateString();
+          return (
+            <li className="flex items-center justify-between py-4">
+              <div className="flex items-center gap-3">
+                <div>
+                  <p className="text-ink">
+                    {new Date(l.date).toLocaleDateString("en-IN", { weekday: "short", month: "long", day: "numeric", year: "numeric" })}
+                  </p>
+                  {l.reason && <p className="text-sm text-ink-soft">{l.reason}</p>}
+                </div>
+                {isToday && (
+                  <span className="rounded-full border border-amber bg-amber-soft px-2 py-0.5 text-xs font-medium text-amber">
+                    Today
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => removeMutation.mutate(l.id)}
+                disabled={removeMutation.isPending}
+                className="text-sm text-critical hover:underline"
+              >
+                Remove
+              </button>
+            </li>
+          );
+        }
+
+        return (
+          <>
+            <div className="mb-8 flex items-center justify-between">
+              <p className="font-mono text-xs uppercase tracking-wide text-ink-soft">Scheduled leave</p>
+              <p className="text-sm text-ink-soft">
+                {upcoming.length} upcoming{past.length > 0 ? ` · ${past.length} past` : ""}
+              </p>
             </div>
-            <button
-              onClick={() => removeMutation.mutate(l.id)}
-              disabled={removeMutation.isPending}
-              className="text-sm text-critical hover:underline"
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
+
+            {all.length === 0 && <p className="text-ink-soft">No leave days scheduled.</p>}
+
+            {upcoming.length > 0 && (
+              <ul className="mb-8 flex flex-col divide-y divide-line border-y border-line">
+                {upcoming.map((l) => (
+                  <Row key={l.id} l={l} />
+                ))}
+              </ul>
+            )}
+
+            {past.length > 0 && (
+              <details className="group">
+                <summary className="cursor-pointer text-sm text-ink-soft hover:text-accent">
+                  {past.length} past leave day{past.length === 1 ? "" : "s"}
+                </summary>
+                <ul className="mt-4 flex flex-col divide-y divide-line border-y border-line opacity-70">
+                  {past.map((l) => (
+                    <Row key={l.id} l={l} />
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
