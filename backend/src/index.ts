@@ -9,6 +9,17 @@ import calendarRoutes from "./routes/calendar.routes";
 import waitlistRoutes from "./routes/waitlist.routes";
 import medicineRoutes from "./routes/medicine.routes";
 
+// Render's free tier only covers Web Services — a separate Background
+// Worker service (what `npm run worker` / worker.ts is meant for) is a
+// paid-only service type there, so in production the API process also
+// starts the BullMQ job listeners itself rather than requiring a second
+// paid service. Locally, keep them split (`npm run dev` + `npm run
+// worker` in two terminals) so a stuck AI/email call can't be confused
+// with an API bug — set RUN_WORKER_INLINE=false to opt out even in prod.
+if (env.NODE_ENV === "production" && process.env.RUN_WORKER_INLINE !== "false") {
+  import("./worker");
+}
+
 const app = express();
 
 app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));

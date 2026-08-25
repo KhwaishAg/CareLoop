@@ -134,12 +134,14 @@ npm run seed            # creates demo accounts, see below
 npm run dev              # API on :4000
 ```
 
-In a second terminal, start the background worker process (required for notifications, slot-hold expiry, medication reminders, calendar sync, and AI jobs — the API alone won't process any of these):
+In a second terminal, start the background worker process (required for notifications, slot-hold expiry, medication reminders, calendar sync, and AI jobs — the API alone won't process any of these locally):
 
 ```bash
 cd backend
 npm run worker
 ```
+
+In production this runs differently — see **Deployment** below.
 
 ### 3. Frontend
 
@@ -322,7 +324,17 @@ All three prompts are built server-side from data already in the database or fro
 
 ## Deployment
 
-The API and worker are two separate long-running Node processes (`npm run start` / `npm run worker`) — this is why they're deployed to a host that supports persistent processes (e.g. Render) rather than a serverless platform, since the worker needs to stay alive between BullMQ jobs, not spin up per-request. `GET /health` exists for a free uptime pinger (e.g. cron-job.org) to keep a free-tier instance from idling out. The frontend is a static Vite build, deployable to any static host (Vercel/Netlify/Render static site) pointed at `VITE_API_URL` (or equivalent) for the backend's public URL.
+Locally, and conceptually, the API and worker are two separate long-running Node processes (`npm run start` / `npm run worker`) — that split is what `docs/design-writeup.md` describes and it's why either needs a host that supports persistent processes rather than serverless functions (a BullMQ worker has to stay alive between jobs, not spin up per-request).
+
+In practice, on Render's **free tier specifically**, Background Workers are a paid-only service type (there's no free option for them at all — only Web Services and Static Sites are free). Deploying the worker as its own paid service would break the assignment's free-tier constraint, so in production the same process that serves the API also starts the BullMQ job listeners itself — see the `if (env.NODE_ENV === "production") import("./worker")` guard at the top of `src/index.ts`. This keeps the deployment entirely on the free tier at the cost of the API and worker sharing one process's CPU/memory instead of two; that trade-off is explicit and reversible (`RUN_WORKER_INLINE=false` opts back out) if you ever move off the free tier.
+
+Deploy three services from this repo:
+
+1. **API (Web Service, free)** — root directory `backend`, build `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`, start `npm run start`. This single service now also runs the worker internally.
+2. **Frontend (Static Site, free)** — root directory `frontend`, build `npm install && npm run build`, publish directory `dist`, env var `VITE_API_URL` pointed at the API service's URL.
+3. A free uptime pinger (e.g. [cron-job.org](https://cron-job.org)) hitting the API's `GET /health` every 10–14 minutes, so the free instance never idles out.
+
+There's no separate Background Worker service to deploy — see above for why.
 
 ## Useful scripts
 
