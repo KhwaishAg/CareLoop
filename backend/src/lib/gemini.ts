@@ -1,6 +1,12 @@
 import { env, llmConfigured } from "./env";
 
-const GEMINI_TIMEOUT_MS = 10_000;
+// Default timeout for the synchronous, user-facing call (symptom-assist,
+// where a patient is actively waiting on the response mid-form) — kept
+// short so a slow call fails fast rather than stalling the UI. Background
+// jobs (pre-visit brief, post-visit summary) pass a longer explicit
+// timeout via `timeoutMs`, since nothing user-facing blocks on them and a
+// shared-CPU free-tier host is more latency-variable than local dev.
+const DEFAULT_GEMINI_TIMEOUT_MS = 10_000;
 
 export class LlmNotConfiguredError extends Error {
   constructor() {
@@ -17,11 +23,16 @@ export class LlmCallFailedError extends Error {}
  * and degrade gracefully (see llm.service.ts) rather than let a bad
  * response reach the doctor or patient.
  */
-export async function callGemini(params: { systemInstruction: string; prompt: string }): Promise<unknown> {
+export async function callGemini(params: {
+  systemInstruction: string;
+  prompt: string;
+  timeoutMs?: number;
+}): Promise<unknown> {
   if (!llmConfigured) throw new LlmNotConfiguredError();
 
+  const timeoutMs = params.timeoutMs ?? DEFAULT_GEMINI_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
@@ -59,7 +70,7 @@ export async function callGemini(params: { systemInstruction: string; prompt: st
   } catch (err) {
     if (err instanceof LlmCallFailedError || err instanceof LlmNotConfiguredError) throw err;
     if (err instanceof Error && err.name === "AbortError") {
-      throw new LlmCallFailedError(`Gemini call timed out after ${GEMINI_TIMEOUT_MS}ms`);
+      throw new LlmCallFailedError(`Gemini call timed out after ${timeoutMs}ms`);
     }
     throw new LlmCallFailedError(`Gemini call failed: ${(err as Error).message}`);
   } finally {

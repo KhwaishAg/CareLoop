@@ -106,6 +106,10 @@ export async function processPreVisitSummary(appointmentId: string): Promise<voi
     const raw = await callGemini({
       systemInstruction: PRE_VISIT_SYSTEM_INSTRUCTION,
       prompt: buildPreVisitPrompt(appointment.symptomForm.rawSymptoms, priorVisitContext),
+      // Background job, nothing user-facing blocks on this call — a
+      // shared-CPU free-tier host is more latency-variable than local
+      // dev, so the default 10s synchronous-call timeout is too tight.
+      timeoutMs: 25_000,
     });
 
     const parsed = preVisitResponseSchema.parse(raw);
@@ -225,6 +229,8 @@ export async function processPostVisitSummary(appointmentId: string): Promise<vo
     const raw = await callGemini({
       systemInstruction: POST_VISIT_SYSTEM_INSTRUCTION,
       prompt: buildPostVisitPrompt(appointment.visitNote.clinicalNotes, appointment.patient.preferredLanguage),
+      // Background job — see the matching comment in processPreVisitSummary.
+      timeoutMs: 25_000,
     });
 
     const parsed = postVisitResponseSchema.parse(raw);
