@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 
 /**
@@ -19,7 +20,11 @@ export async function recordAudit(params: {
         action: params.action,
         entity: params.entity,
         entityId: params.entityId ?? null,
-        metadata: params.metadata ?? undefined,
+        // Record<string, unknown> isn't directly assignable to Prisma's
+        // InputJsonValue (a stricter recursive JSON type) — the cast is
+        // safe here since metadata is always a plain JSON-serializable
+        // object at every call site.
+        metadata: (params.metadata as Prisma.InputJsonValue | undefined) ?? undefined,
       },
     });
   } catch (err) {
