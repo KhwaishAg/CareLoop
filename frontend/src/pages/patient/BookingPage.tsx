@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { useDoctors, type DoctorProfile } from "../../lib/hooks";
@@ -22,6 +22,53 @@ interface HeldAppointment {
   id: string;
   startTime: string;
   holdExpiresAt: string;
+}
+
+/** A real availability signal on the discovery list, not decoration —
+ *  checks today then tomorrow via the same slots endpoint the booking
+ *  step already uses, so it can never say something the calendar
+ *  disagrees with a moment later. */
+function NextAvailableSlot({ doctorProfileId }: { doctorProfileId: string }) {
+  const today = toDateKey(new Date());
+  const tomorrow = toDateKey(new Date(Date.now() + 86_400_000));
+
+  const { data: todaySlots, isLoading: loadingToday } = useQuery({
+    queryKey: ["slots", doctorProfileId, today],
+    queryFn: async () =>
+      (await api.get<{ slots: Slot[]; onLeave: boolean }>("/api/appointments/slots", { params: { doctorProfileId, date: today } })).data,
+  });
+  const { data: tomorrowSlots, isLoading: loadingTomorrow } = useQuery({
+    queryKey: ["slots", doctorProfileId, tomorrow],
+    queryFn: async () =>
+      (await api.get<{ slots: Slot[]; onLeave: boolean }>("/api/appointments/slots", { params: { doctorProfileId, date: tomorrow } })).data,
+    enabled: !todaySlots || todaySlots.slots.length === 0,
+  });
+
+  if (loadingToday) return <span className="text-xs text-ink-soft">Checking availability…</span>;
+
+  const next = todaySlots && todaySlots.slots.length > 0 ? { slot: todaySlots.slots[0], when: "Today" } : null;
+  if (next) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-success">
+        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+        Next available {next.when} ·{" "}
+        {new Date(next.slot.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+      </span>
+    );
+  }
+
+  if (loadingTomorrow) return <span className="text-xs text-ink-soft">Checking availability…</span>;
+  if (tomorrowSlots && tomorrowSlots.slots.length > 0) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-success">
+        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+        Next available Tomorrow ·{" "}
+        {new Date(tomorrowSlots.slots[0].startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+      </span>
+    );
+  }
+
+  return <span className="text-xs text-ink-soft">No slots in the next 2 days</span>;
 }
 
 function nextDays(count: number) {
@@ -54,6 +101,7 @@ function useCountdown(target: string | null) {
 
 export function BookingPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -61,6 +109,7 @@ export function BookingPage() {
   const [dateKey, setDateKey] = useState(toDateKey(new Date()));
   const [held, setHeld] = useState<HeldAppointment | null>(null);
   const [doctorQuery, setDoctorQuery] = useState("");
+  const [specialityFilter, setSpecialityFilter] = useState<string | null>(null);
 
   const [rawSymptoms, setRawSymptoms] = useState("");
   const [language, setLanguage] = useState("EN");
@@ -70,6 +119,19 @@ export function BookingPage() {
 
   const { data: doctors, isLoading: doctorsLoading } = useDoctors();
 
+  // Arriving from a doctor's profile page ("Book with Dr. X") preselects
+  // that doctor and skips straight to picking a time.
+  useEffect(() => {
+    const preselectId = (location.state as { doctorId?: string } | null)?.doctorId;
+    if (preselectId && doctors && !doctor) {
+      const match = doctors.find((d) => d.id === preselectId);
+      if (match) {
+        setDoctor(match);
+        setStep(2);
+      }
+    }
+  }, [doctors, location.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const filteredDoctors = useMemo(() => {
     const q = doctorQuery.trim().toLowerCase();
     if (!q) return doctors ?? [];
@@ -77,6 +139,16 @@ export function BookingPage() {
       (d) => d.user.name.toLowerCase().includes(q) || d.specialisation.toLowerCase().includes(q)
     );
   }, [doctors, doctorQuery]);
+
+  const specialities = useMemo(
+    () => [...new Set((doctors ?? []).map((d) => d.specialisation))].sort(),
+    [doctors]
+  );
+
+  const visibleDoctors = useMemo(
+    () => (specialityFilter ? filteredDoctors.filter((d) => d.specialisation === specialityFilter) : filteredDoctors),
+    [filteredDoctors, specialityFilter]
+  );
 
   const { data: slotsData, isLoading: slotsLoading } = useQuery({
     queryKey: ["slots", doctor?.id, dateKey],
@@ -211,30 +283,81 @@ export function BookingPage() {
             />
           </div>
 
+          {specialities.length > 1 && (
+            <div className="mb-6 flex flex-wrap gap-2">
+              <button
+                onClick={() => setSpecialityFilter(null)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+                  specialityFilter === null
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-line text-ink-soft hover:border-ink-soft"
+                }`}
+              >
+                All specialities
+              </button>
+              {specialities.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSpecialityFilter(s)}
+                  className={`rounded-full border px-3.5 py-1.5 text-sm transition ${
+                    specialityFilter === s
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-line text-ink-soft hover:border-ink-soft"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-col divide-y divide-line border-y border-line">
             {doctorsLoading && <p className="py-6 text-ink-soft">Loading doctors…</p>}
-            {filteredDoctors.map((d) => (
-              <button
+            {visibleDoctors.map((d) => (
+              <div
                 key={d.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   setDoctor(d);
                   setStep(2);
                 }}
-                className="flex items-center justify-between py-5 text-left transition hover:pl-2"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setDoctor(d);
+                    setStep(2);
+                  }
+                }}
+                className="flex cursor-pointer items-center justify-between gap-4 py-5 text-left transition hover:pl-2"
               >
                 <div>
                   <p className="font-display text-xl font-semibold text-ink">{doctorLabel(d.user.name)}</p>
-                  <p className="text-sm text-ink-soft">{d.specialisation}</p>
+                  <p className="mb-1.5 text-sm text-ink-soft">
+                    {d.specialisation} · {d.slotDurationMin}-min consultation
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <NextAvailableSlot doctorProfileId={d.id} />
+                    <Link
+                      to={`/doctors/${d.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-ink-soft underline underline-offset-2 hover:text-accent"
+                    >
+                      View profile
+                    </Link>
+                  </div>
                 </div>
                 <span className="text-ink-soft">→</span>
-              </button>
+              </div>
             ))}
             {!doctorsLoading && doctors?.length === 0 && (
               <p className="py-6 text-ink-soft">No doctors available right now.</p>
             )}
-            {!doctorsLoading && (doctors?.length ?? 0) > 0 && filteredDoctors.length === 0 && (
+            {!doctorsLoading && (doctors?.length ?? 0) > 0 && visibleDoctors.length === 0 && (
               <p className="py-6 text-ink-soft">
-                No doctors match "{doctorQuery}" — try a different name or specialisation.
+                {doctorQuery
+                  ? `No doctors match "${doctorQuery}" — try a different name or specialisation.`
+                  : "No doctors in this speciality right now — try another one."}
               </p>
             )}
           </div>
@@ -332,9 +455,10 @@ export function BookingPage() {
           ) : (
             <>
               <div className="mb-5">
+                <p className="mb-0.5 text-sm text-ink-soft">Before we confirm your appointment —</p>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm text-ink-soft">What's going on? Describe your symptoms.</span>
-                  <AIBadge text="AI PREPARES YOUR VISIT BRIEF" />
+                  <span className="text-ink">Tell your doctor what you're experiencing.</span>
+                  <AIBadge text="AI-assisted" />
                 </div>
                 <textarea
                   rows={5}

@@ -214,9 +214,10 @@ export function PatientAppointmentDetail() {
               </div>
 
               <div className="mb-4">
+                <p className="mb-0.5 text-sm text-ink-soft">Before we confirm your appointment —</p>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm text-ink-soft">What's going on? Describe your symptoms.</span>
-                  <AIBadge text="AI PREPARES YOUR VISIT BRIEF" />
+                  <span className="text-ink">Tell your doctor what you're experiencing.</span>
+                  <AIBadge text="AI-assisted" />
                 </div>
                 <textarea
                   rows={5}
@@ -302,39 +303,57 @@ export function PatientAppointmentDetail() {
         </section>
       )}
 
-      {/* Post-visit summary + prescriptions */}
+      {/* Post-visit summary + prescriptions — the review interface a patient
+         actually reads after a visit, so it gets a distinct, letter-like
+         treatment rather than being one more plain section in the page. */}
       {appointment.status === "COMPLETED" && visitNote && (
-        <section className="mb-8 border-b border-line pb-8">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="font-mono text-xs uppercase tracking-wide text-ink-soft">Visit summary</p>
-            {visitNote.status === "READY" && <AIBadge text="AI SUMMARISED, DOCTOR REVIEWED" />}
+        <section className="mb-8 overflow-hidden rounded-xl border border-line bg-bg-raised">
+          <div className="flex items-center justify-between border-b border-line bg-accent-soft px-6 py-4">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-wide text-accent">Visit summary</p>
+              <p className="text-sm text-ink-soft">{doctorLabel(appointment.doctor.name)}</p>
+            </div>
+            {visitNote.status === "READY" && <AIBadge text="AI-assisted · Doctor reviewed" />}
           </div>
-          {visitNote.status === "PENDING" && <p className="text-ink-soft">Preparing your summary…</p>}
-          {visitNote.patientSummary && <p className="mb-4 text-ink">{visitNote.patientSummary}</p>}
 
-          {appointment.medications.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-sm font-medium text-ink">Prescriptions</p>
-              <ul className="flex flex-col gap-2">
-                {appointment.medications.map((m) => (
-                  <li key={m.id} className="rounded-lg border border-line bg-bg-raised px-4 py-2.5 text-sm">
-                    <span className="font-medium text-ink">{m.name}</span>{" "}
-                    <span className="text-ink-soft">
-                      — {m.dosage}, {m.frequencyType.replace(/_/g, " ").toLowerCase()}
-                    </span>
-                    {m.instructions && <p className="mt-1 text-ink-soft">{m.instructions}</p>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="px-6 py-6">
+            {visitNote.status === "PENDING" && <p className="text-ink-soft">Preparing your summary…</p>}
+            {visitNote.patientSummary && (
+              <p className="mb-6 text-lg leading-relaxed text-ink">{visitNote.patientSummary}</p>
+            )}
 
-          {visitNote.followUpSteps && (
-            <div className="rounded-lg border border-line bg-bg-raised px-4 py-3 text-sm">
-              <p className="mb-1 font-medium text-ink">Next steps</p>
-              <p className="text-ink-soft">{visitNote.followUpSteps}</p>
-            </div>
-          )}
+            {appointment.medications.length > 0 && (
+              <div className="mb-6">
+                <p className="mb-3 text-sm font-medium text-ink">Prescribed</p>
+                <ul className="flex flex-col gap-2">
+                  {appointment.medications.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-start gap-3 rounded-lg border border-line bg-bg px-4 py-3 text-sm"
+                    >
+                      <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent-soft text-accent">
+                        ●
+                      </span>
+                      <div>
+                        <p className="font-medium text-ink">
+                          {m.name} <span className="font-normal text-ink-soft">· {m.dosage}</span>
+                        </p>
+                        <p className="text-ink-soft">{m.frequencyType.replace(/_/g, " ").toLowerCase()}</p>
+                        {m.instructions && <p className="mt-1 text-ink-soft">{m.instructions}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {visitNote.followUpSteps && (
+              <div className="rounded-lg border border-line bg-bg px-4 py-3 text-sm">
+                <p className="mb-1 font-medium text-ink">Next steps</p>
+                <p className="text-ink-soft">{visitNote.followUpSteps}</p>
+              </div>
+            )}
+          </div>
         </section>
       )}
 

@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../../lib/auth";
 import { useMyAppointments } from "../../lib/hooks";
-import { PatientJourney } from "../../components/PatientJourney";
-import { StatusPill } from "../../components/StatusPill";
+import { HealthTimeline } from "../../components/HealthTimeline";
 import { doctorLabel } from "../../lib/format";
 
 function greeting() {
@@ -21,19 +20,10 @@ export function PatientHome() {
     ?.filter((a) => a.status === "BOOKED" && new Date(a.startTime).getTime() > now)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0];
 
-  // A HELD row the patient hasn't confirmed yet — most commonly a waitlist
-  // offer (a slot freed up and was reserved for them), occasionally an
-  // abandoned booking. Easy to miss otherwise since it's neither "next"
-  // nor shown on the timeline.
   const pendingHolds = (appointments ?? []).filter(
     (a) => a.status === "HELD" && a.holdExpiresAt && new Date(a.holdExpiresAt).getTime() > now
   );
 
-  // A completed visit where the doctor recommended a follow-up, and the
-  // patient hasn't booked (or already had) a later appointment with that
-  // same doctor yet. Nothing books this automatically — the patient has to
-  // go through Book — so it's surfaced here as a nudge rather than left to
-  // be discovered on the old appointment's detail page.
   const followUpsNeeded = (appointments ?? [])
     .filter((a) => a.status === "COMPLETED" && a.recommendedFollowUpDate)
     .filter((a) => {
@@ -46,55 +36,48 @@ export function PatientHome() {
       return !alreadyBookedLater;
     });
 
-  const daysUntil = next
-    ? Math.max(0, Math.ceil((new Date(next.startTime).getTime() - now) / 86_400_000))
-    : null;
+  const activeMedications = (appointments ?? [])
+    .flatMap((a) => a.medications)
+    .filter((m) => new Date(m.endDate).getTime() >= new Date().setHours(0, 0, 0, 0));
 
-  const todo: { label: string; done: boolean }[] = next
-    ? [
-        { label: "Symptom form submitted", done: true },
-        {
-          label: "AI pre-visit summary ready",
-          done: next.symptomForm?.status === "READY",
-        },
-      ]
-    : [];
+  // "What do I need to do today?" — a short, ordered checklist rather than
+  // a stats row. Each step either has an action attached or is settled.
+  const steps: { label: string; done: boolean; action?: { to: string; label: string } }[] = [];
+  if (next) {
+    steps.push({
+      label: "Symptom form submitted",
+      done: true,
+    });
+    steps.push({
+      label: "AI pre-visit summary ready for your doctor",
+      done: next.symptomForm?.status === "READY",
+    });
+  }
+  if (activeMedications.length > 0) {
+    steps.push({
+      label: `${activeMedications.length} medication${activeMedications.length === 1 ? "" : "s"} to keep up with`,
+      done: false,
+      action: { to: "/medications", label: "View" },
+    });
+  }
+  followUpsNeeded.forEach((a) => {
+    steps.push({
+      label: `Follow-up with ${doctorLabel(a.doctor.name)} — around ${new Date(
+        a.recommendedFollowUpDate!
+      ).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}`,
+      done: false,
+      action: { to: "/book", label: "Book" },
+    });
+  });
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-12">
+    <div className="mx-auto max-w-2xl px-6 py-12">
       <p className="mb-1 font-mono text-xs uppercase tracking-widest text-accent">
         {greeting()}, {user?.name.split(" ")[0]}
       </p>
-      <h1 className="mb-10 text-balance font-display text-4xl font-semibold leading-tight text-ink">
-        Your care, in one place.
+      <h1 className="mb-12 text-balance font-display text-4xl font-semibold leading-tight text-ink">
+        Your care, at a glance.
       </h1>
-
-      {followUpsNeeded.length > 0 && (
-        <section className="mb-8 flex flex-col gap-3">
-          {followUpsNeeded.map((appt) => (
-            <div
-              key={appt.id}
-              className="flex items-center justify-between gap-4 rounded-lg border border-line bg-bg-raised px-4 py-3"
-            >
-              <p className="text-sm text-ink">
-                <span className="font-medium">Follow-up recommended</span> by {doctorLabel(appt.doctor.name)} —
-                around{" "}
-                {new Date(appt.recommendedFollowUpDate!).toLocaleDateString("en-IN", {
-                  month: "short",
-                  day: "numeric",
-                })}
-                . Book a new slot with them whenever you're ready.
-              </p>
-              <Link
-                to="/book"
-                className="whitespace-nowrap rounded-lg border border-line px-3.5 py-1.5 text-sm text-ink transition hover:border-accent hover:text-accent"
-              >
-                Book follow-up →
-              </Link>
-            </div>
-          ))}
-        </section>
-      )}
 
       {pendingHolds.length > 0 && (
         <section className="mb-8 flex flex-col gap-3">
@@ -124,58 +107,88 @@ export function PatientHome() {
         </section>
       )}
 
-      {/* Next appointment — large, editorial, not a card grid */}
-      <section className="mb-14 border-b border-line pb-10">
+      {/* NEXT APPOINTMENT — the one thing this page exists to answer */}
+      <section className="mb-14">
         <p className="mb-3 font-mono text-xs uppercase tracking-wide text-ink-soft">Next appointment</p>
         {next ? (
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <p className="font-display text-5xl font-semibold text-ink">
-                {new Date(next.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
-              </p>
-              <p className="mt-1 font-mono text-sm uppercase tracking-wide text-ink-soft">
-                {new Date(next.startTime).toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
-              </p>
-              <p className="mt-4 text-lg text-ink">{doctorLabel(next.doctor.name)}</p>
-              <p className="text-ink-soft">
-                {daysUntil === 0 ? "Today" : `${daysUntil} day${daysUntil === 1 ? "" : "s"} from now`}
-              </p>
+          <div className="rounded-xl border border-line bg-bg-raised p-6">
+            <div className="flex flex-wrap items-start justify-between gap-6">
+              <div>
+                <p className="font-display text-2xl font-semibold text-ink">{doctorLabel(next.doctor.name)}</p>
+                {next.doctor.doctorProfile && (
+                  <p className="text-ink-soft">{next.doctor.doctorProfile.specialisation}</p>
+                )}
+                <p className="mt-3 text-lg text-ink">
+                  {new Date(next.startTime).toLocaleDateString("en-IN", {
+                    weekday: "long",
+                    month: "short",
+                    day: "numeric",
+                  })}{" "}
+                  · {new Date(next.startTime).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+                </p>
+                <p className="mt-1.5 flex items-center gap-2 text-sm text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                  Confirmed · Calendar synced
+                </p>
+              </div>
+              <Link
+                to={`/appointments/${next.id}`}
+                className="whitespace-nowrap rounded-lg border border-line px-4 py-2 text-sm text-ink transition hover:border-accent hover:text-accent"
+              >
+                View appointment →
+              </Link>
             </div>
-            <Link
-              to={`/appointments/${next.id}`}
-              className="rounded-lg border border-line px-4 py-2 text-sm text-ink transition hover:border-accent hover:text-accent"
-            >
-              View appointment →
-            </Link>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
-            <p className="text-ink-soft">Nothing booked yet.</p>
-            <Link to="/book" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
-              Book an appointment
+          <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-bg-raised px-6 py-6">
+            <p className="text-ink-soft">No upcoming appointments.</p>
+            <Link to="/book" className="whitespace-nowrap rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+              Find a doctor
             </Link>
           </div>
-        )}
-
-        {todo.length > 0 && (
-          <ul className="mt-6 flex flex-col gap-1.5">
-            {todo.map((t) => (
-              <li key={t.label} className="flex items-center gap-2 text-sm">
-                <StatusPill label={t.done ? "Done" : "Pending"} tone={t.done ? "positive" : "neutral"} />
-                <span className={t.done ? "text-ink-soft line-through" : "text-ink"}>{t.label}</span>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
 
-      {/* The signature timeline */}
+      {/* YOUR NEXT STEPS — a checklist, not stat tiles */}
+      {steps.length > 0 && (
+        <section className="mb-14">
+          <p className="mb-4 font-mono text-xs uppercase tracking-wide text-ink-soft">Your next steps</p>
+          <ul className="flex flex-col divide-y divide-line border-y border-line">
+            {steps.map((s, i) => (
+              <li key={i} className="flex items-center justify-between gap-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border text-xs ${
+                      s.done ? "border-success bg-success text-white" : "border-line text-transparent"
+                    }`}
+                  >
+                    ✓
+                  </span>
+                  <span className={s.done ? "text-ink-soft line-through" : "text-ink"}>{s.label}</span>
+                </div>
+                {!s.done && s.action && (
+                  <Link to={s.action.to} className="whitespace-nowrap text-sm text-accent hover:underline">
+                    {s.action.label} →
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* RECENT CARE — a taste of the timeline, not the whole thing */}
       <section>
-        <p className="mb-4 font-mono text-xs uppercase tracking-wide text-ink-soft">Your journey</p>
+        <div className="mb-4 flex items-center justify-between">
+          <p className="font-mono text-xs uppercase tracking-wide text-ink-soft">Recent care</p>
+          <Link to="/timeline" className="text-sm text-accent hover:underline">
+            Full timeline →
+          </Link>
+        </div>
         {isLoading ? (
           <p className="text-ink-soft">Loading…</p>
         ) : (
-          <PatientJourney appointments={appointments ?? []} />
+          <HealthTimeline appointments={appointments ?? []} compact />
         )}
       </section>
     </div>
