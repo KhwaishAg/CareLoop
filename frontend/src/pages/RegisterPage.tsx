@@ -16,6 +16,12 @@ export function RegisterPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "", preferredLanguage: "EN" });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // "Doctor" is shown as an option because people looking to register as
+  // one need to land somewhere — but it doesn't create an account here.
+  // Doctor accounts are admin-created and verified (see Doctors → Add
+  // doctor in the admin portal); letting anyone self-declare as a doctor
+  // on public registration would be a real impersonation risk.
+  const [accountType, setAccountType] = useState<"PATIENT" | "DOCTOR">("PATIENT");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,8 +46,42 @@ export function RegisterPage() {
           </Link>
           <ThemeToggle />
         </div>
-        <h2 className="mb-8 font-display text-3xl font-semibold text-ink">Create your account</h2>
+        <h2 className="mb-6 font-display text-3xl font-semibold text-ink">Create your account</h2>
 
+        <div className="mb-6 grid grid-cols-2 gap-2 rounded-lg border border-line bg-bg-raised p-1">
+          <button
+            type="button"
+            onClick={() => setAccountType("PATIENT")}
+            className={`rounded-md py-2 text-sm font-medium transition ${
+              accountType === "PATIENT" ? "bg-accent text-white" : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            I'm a patient
+          </button>
+          <button
+            type="button"
+            onClick={() => setAccountType("DOCTOR")}
+            className={`rounded-md py-2 text-sm font-medium transition ${
+              accountType === "DOCTOR" ? "bg-accent text-white" : "text-ink-soft hover:text-ink"
+            }`}
+          >
+            I'm a doctor
+          </button>
+        </div>
+
+        {accountType === "DOCTOR" ? (
+          <div className="rounded-lg border border-line bg-bg-raised px-4 py-4 text-sm">
+            <p className="mb-2 text-ink">Doctor accounts are set up by your clinic admin, not through self-registration.</p>
+            <p className="text-ink-soft">
+              Ask your clinic administrator to add you from the Doctors page — they'll set your specialisation and
+              working hours, and you'll get a login to use right away. If you're the admin,{" "}
+              <Link to="/login" className="text-accent underline underline-offset-2">
+                sign in
+              </Link>{" "}
+              and go to Doctors → Add doctor.
+            </p>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-sm text-ink-soft">Full name</span>
@@ -104,6 +144,7 @@ export function RegisterPage() {
             {submitting ? "Creating account…" : "Create account"}
           </button>
         </form>
+        )}
 
         <p className="mt-6 text-sm text-ink-soft">
           Already have an account?{" "}
