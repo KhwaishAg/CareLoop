@@ -17,7 +17,7 @@ import medicineRoutes from "./routes/medicine.routes";
 // worker` in two terminals) so a stuck AI/email call can't be confused
 // with an API bug — set RUN_WORKER_INLINE=false to opt out even in prod.
 if (env.NODE_ENV === "production" && process.env.RUN_WORKER_INLINE !== "false") {
-  import("./worker");
+  import("./worker.js");
 }
 
 const app = express();

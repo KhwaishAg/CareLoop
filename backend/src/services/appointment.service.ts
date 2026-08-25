@@ -398,7 +398,7 @@ async function offerToWaitlist(doctorUserId: string, slotStart: Date) {
   const doctorProfile = await prisma.doctorProfile.findUnique({ where: { userId: doctorUserId } });
   if (!doctorProfile) return;
 
-  const { offerFreedSlotToWaitlist } = await import("./waitlist.service");
+  const { offerFreedSlotToWaitlist } = await import("./waitlist.service.js");
   await offerFreedSlotToWaitlist({
     doctorProfileId: doctorProfile.id,
     doctorUserId,
