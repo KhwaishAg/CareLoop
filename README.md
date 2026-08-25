@@ -2,8 +2,12 @@
 
 A healthcare appointment and follow-up manager: separate patient, doctor, and admin portals, AI-assisted pre-visit and post-visit summaries, background notification jobs, and Google Calendar sync — built entirely on free-tier infrastructure.
 
-Live demo: **[add your deployed URL here once live]**
+Live demo: **[CareLoop](https://careloop-e2ry.onrender.com)** (API: `https://careloop-api-c6ol.onrender.com`)
 Design reasoning (double-booking, leave conflicts, slot holds, notification failures): [`docs/design-writeup.md`](docs/design-writeup.md)
+
+Demo accounts for the live site (see **Demo accounts** below for the full list): `patient@demo.com` / `dr.sharma@clinic.demo` / `admin@clinic.demo`, all with password `Password123!`.
+
+> **Note on cold starts**: both services are on Render's free tier. The API has an uptime pinger hitting `/health` to stay warm, but if it's been fully idle it may take 30–50 seconds to respond to the very first request — subsequent requests are fast.
 
 ## Stack
 
@@ -328,13 +332,15 @@ Locally, and conceptually, the API and worker are two separate long-running Node
 
 In practice, on Render's **free tier specifically**, Background Workers are a paid-only service type (there's no free option for them at all — only Web Services and Static Sites are free). Deploying the worker as its own paid service would break the assignment's free-tier constraint, so in production the same process that serves the API also starts the BullMQ job listeners itself — see the `if (env.NODE_ENV === "production") import("./worker")` guard at the top of `src/index.ts`. This keeps the deployment entirely on the free tier at the cost of the API and worker sharing one process's CPU/memory instead of two; that trade-off is explicit and reversible (`RUN_WORKER_INLINE=false` opts back out) if you ever move off the free tier.
 
-Deploy three services from this repo:
+Deployed as two Render services (both free tier):
 
-1. **API (Web Service, free)** — root directory `backend`, build `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`, start `npm run start`. This single service now also runs the worker internally.
-2. **Frontend (Static Site, free)** — root directory `frontend`, build `npm install && npm run build`, publish directory `dist`, env var `VITE_API_URL` pointed at the API service's URL.
-3. A free uptime pinger (e.g. [cron-job.org](https://cron-job.org)) hitting the API's `GET /health` every 10–14 minutes, so the free instance never idles out.
+1. **API (Web Service)** — [`careloop-api-c6ol.onrender.com`](https://careloop-api-c6ol.onrender.com) — root directory `backend`, build `npm install --include=dev && npx prisma generate && npx prisma migrate deploy && npm run build`, start `npm run start`. Runs the worker internally (see above). Note the `--include=dev` flag: Render sets `NODE_ENV=production` on the service, and npm's default behavior is to skip `devDependencies` (including `typescript` and every `@types/*` package) whenever `NODE_ENV=production` is set during install — without that flag, the TypeScript build itself fails.
+2. **Frontend (Static Site)** — [`careloop-e2ry.onrender.com`](https://careloop-e2ry.onrender.com) — root directory `frontend`, build `npm install && npm run build`, publish directory `dist`, env var `VITE_API_URL` set to the API service's URL. Since Vite bakes env vars into the built bundle at build time, changing `VITE_API_URL` requires a fresh build (a plain restart won't pick it up).
+3. A free uptime pinger ([cron-job.org](https://cron-job.org)) hits the API's `GET /health` every 10–14 minutes so the free instance never idles out.
 
-There's no separate Background Worker service to deploy — see above for why.
+There's no separate Background Worker service — see above for why. `FRONTEND_URL` on the API service is set to the frontend's URL (required for CORS to allow the browser to call the API from a different origin), and the production database was seeded once, directly, by running `npm run seed` locally with `DATABASE_URL` temporarily pointed at the live Neon database.
+
+One tuning fix worth noting: the free-tier host is more latency-variable than local dev, so the background LLM jobs (pre-visit brief, post-visit summary) needed a longer Gemini call timeout than the synchronous, user-facing symptom-assist call — `callGemini()` in `src/lib/gemini.ts` takes an optional `timeoutMs` per call for exactly this reason (10s for the call a patient is actively waiting on mid-form, 25s for the two background jobs, where nothing user-facing blocks on them).
 
 ## Useful scripts
 
@@ -345,5 +351,5 @@ There's no separate Background Worker service to deploy — see above for why.
 
 - Google Calendar sync requires each doctor to connect their own account via OAuth; the OAuth consent screen runs in test-user mode (no Google app verification needed for this assignment's scope).
 - The doctor-facing calendar is a simple week view, not a full scheduling UI; there's no native mobile app, only a responsive web layout with a mobile bottom nav.
-- This targets free-tier infrastructure (Neon / Upstash / Gmail SMTP) — not built for production load, and a crash between a successful email send and its DB write-back could in rare cases double-send a single notification (see design write-up).
+- This targets free-tier infrastructure (Neon / Upstash / Gmail SMTP) — not built for production load, and a crash between a successful email send and its DB write-back could in rare cases double-send a single notification (see design write-up). Neon's free-tier compute also auto-suspends after a few minutes of no queries; the first query after a suspend can log a transient `Error in PostgreSQL connection: Closed` before Neon auto-resumes — this is expected free-tier behavior, not an application bug, and Prisma recovers on the next query.
 - No automated test suite yet — correctness for the four mechanisms in the design write-up currently rests on the database constraints and code paths themselves (partial unique index, idempotency keys, job IDs) rather than on regression tests. Manual verification was done through the demo accounts and seeded data.
