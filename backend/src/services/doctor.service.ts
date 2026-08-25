@@ -109,7 +109,10 @@ export async function getDoctorById(doctorProfileId: string) {
 export async function getDoctorProfileByUserId(userId: string) {
   return prisma.doctorProfile.findUnique({
     where: { userId },
-    include: { leaveDays: { orderBy: { date: "asc" } } },
+    include: {
+      user: { select: { id: true, name: true, email: true, phone: true } },
+      leaveDays: { orderBy: { date: "asc" } },
+    },
   });
 }
 

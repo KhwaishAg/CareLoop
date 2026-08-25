@@ -208,7 +208,7 @@ export async function listMyAppointments(req: AuthedRequest, res: Response) {
     where: role === "DOCTOR" ? { doctorId: id } : { patientId: id },
     include: {
       patient: { select: { id: true, name: true } },
-      doctor: { select: { id: true, name: true } },
+      doctor: { select: { id: true, name: true, doctorProfile: { select: { specialisation: true } } } },
       symptomForm: true,
       visitNote: true,
       medications: true,

@@ -57,6 +57,55 @@ export async function registerUser(input: {
   return user;
 }
 
+export async function getUserById(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, phone: true, role: true, preferredLanguage: true },
+  });
+}
+
+export async function updateUserProfile(
+  userId: string,
+  input: { name?: string; phone?: string; preferredLanguage?: Language }
+) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      name: input.name,
+      phone: input.phone,
+      preferredLanguage: input.preferredLanguage,
+    },
+    select: { id: true, email: true, name: true, phone: true, role: true, preferredLanguage: true },
+  });
+
+  await recordAudit({
+    userId,
+    action: "USER_UPDATED_PROFILE",
+    entity: "User",
+    entityId: userId,
+  });
+
+  return user;
+}
+
+export async function changeUserPassword(userId: string, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("NOT_FOUND");
+
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!valid) throw new Error("INVALID_CURRENT_PASSWORD");
+
+  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+
+  await recordAudit({
+    userId,
+    action: "USER_CHANGED_PASSWORD",
+    entity: "User",
+    entityId: userId,
+  });
+}
+
 export async function loginUser(email: string, password: string) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) throw new Error("INVALID_CREDENTIALS");
