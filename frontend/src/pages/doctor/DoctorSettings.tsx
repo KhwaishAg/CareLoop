@@ -70,6 +70,16 @@ export function DoctorSettings() {
             </button>
           )}
           {connected && (
+            <a
+              href="https://calendar.google.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg border border-line px-4 py-2 text-sm text-ink transition hover:border-accent hover:text-accent"
+            >
+              Open Google Calendar ↗
+            </a>
+          )}
+          {connected && (
             <button onClick={() => refetch()} className="text-sm text-ink-soft hover:text-accent">
               Refresh status
             </button>
@@ -86,7 +96,7 @@ export function DoctorSettings() {
         )}
         {profile && (
           <>
-            <p className="text-ink">{doctorLabel(profile.user.name)}</p>
+            {profile.user && <p className="text-ink">{doctorLabel(profile.user.name)}</p>}
             <p className="text-ink-soft">{profile.specialisation}</p>
             <p className="text-ink-soft">{profile.slotDurationMin}-minute slots</p>
             <p className="mt-2 text-sm text-ink-soft">

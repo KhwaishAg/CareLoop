@@ -104,38 +104,34 @@ export function DoctorAppointmentDetail() {
     );
 
   const { symptomForm } = appointment;
+  const isConsultation = appointment.status === "BOOKED";
 
-  return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
-      <Link to="/doctor" className="mb-6 inline-block text-sm text-ink-soft hover:text-accent">
-        ← Back to today
-      </Link>
-
-      <div className="mb-8 flex items-start justify-between gap-4 border-b border-line pb-8">
-        <div>
-          <p className="mb-1 font-mono text-xs uppercase tracking-widest text-accent">
-            {new Date(appointment.startTime).toLocaleString("en-IN", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
-          </p>
-          <h1 className="font-display text-3xl font-semibold text-ink">{appointment.patient.name}</h1>
-          <Link
-            to={`/doctor/patients/${appointment.patient.id}`}
-            className="text-sm text-ink-soft underline underline-offset-2 hover:text-accent"
-          >
-            View full history with this patient →
-          </Link>
-        </div>
-        <StatusPill label={appointment.status} tone={appointment.status === "BOOKED" ? "positive" : "neutral"} />
+  const header = (
+    <div className="mb-8 flex items-start justify-between gap-4 border-b border-line pb-8">
+      <div>
+        <p className="mb-1 font-mono text-xs uppercase tracking-widest text-accent">
+          {new Date(appointment.startTime).toLocaleString("en-IN", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </p>
+        <h1 className="font-display text-3xl font-semibold text-ink">{appointment.patient.name}</h1>
+        <Link
+          to={`/doctor/patients/${appointment.patient.id}`}
+          className="text-sm text-ink-soft underline underline-offset-2 hover:text-accent"
+        >
+          View full history with this patient →
+        </Link>
       </div>
+      <StatusPill label={appointment.status} tone={appointment.status === "BOOKED" ? "positive" : "neutral"} />
+    </div>
+  );
 
-      {/* AI pre-visit brief */}
-      {symptomForm && (
-        <section className="mb-10 border-b border-line pb-8">
+  const brief = symptomForm && (
+        <section className="mb-10 border-b border-line pb-8 lg:mb-0 lg:border-b-0 lg:pb-0">
           <div className="mb-3 flex items-center justify-between">
             <p className="font-mono text-xs uppercase tracking-wide text-ink-soft">Pre-visit brief</p>
             {symptomForm.status === "READY" && <AIBadge />}
@@ -143,7 +139,8 @@ export function DoctorAppointmentDetail() {
 
           {symptomForm.safetySignalFlagged && (
             <div className="mb-4 rounded-lg border border-critical bg-critical-soft px-4 py-3 text-sm text-critical">
-              <strong className="font-medium">Flagged for attention.</strong> {symptomForm.safetySignalReason}
+              <p className="font-medium">Safety signal detected</p>
+              <p>{symptomForm.safetySignalReason} — please review the original patient response below.</p>
             </div>
           )}
 
@@ -184,37 +181,51 @@ export function DoctorAppointmentDetail() {
                 <div className="rounded-lg border border-accent bg-accent-soft px-4 py-3 text-sm text-ink">
                   <p className="mb-1 font-medium">What's changed since the last visit</p>
                   <p className="mb-2 text-ink-soft">{symptomForm.changeFromLastVisit.summary}</p>
-                  <div className="flex flex-wrap gap-4 text-xs">
-                    {symptomForm.changeFromLastVisit.newSymptoms.length > 0 && (
-                      <span>
-                        <strong>New:</strong> {symptomForm.changeFromLastVisit.newSymptoms.join(", ")}
+                  <div className="flex flex-col gap-2 text-sm">
+                    {symptomForm.changeFromLastVisit.newSymptoms.map((s) => (
+                      <span key={`new-${s}`} className="flex items-center gap-2">
+                        <span className="rounded border border-amber px-1.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-wide text-amber">
+                          New
+                        </span>
+                        {s}
                       </span>
-                    )}
-                    {symptomForm.changeFromLastVisit.resolvedSymptoms.length > 0 && (
-                      <span>
-                        <strong>Resolved:</strong> {symptomForm.changeFromLastVisit.resolvedSymptoms.join(", ")}
+                    ))}
+                    {symptomForm.changeFromLastVisit.resolvedSymptoms.map((s) => (
+                      <span key={`resolved-${s}`} className="flex items-center gap-2">
+                        <span className="rounded border border-success px-1.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-wide text-success">
+                          Resolved
+                        </span>
+                        {s}
                       </span>
-                    )}
-                    {symptomForm.changeFromLastVisit.ongoingSymptoms.length > 0 && (
-                      <span>
-                        <strong>Ongoing:</strong> {symptomForm.changeFromLastVisit.ongoingSymptoms.join(", ")}
+                    ))}
+                    {symptomForm.changeFromLastVisit.ongoingSymptoms.map((s) => (
+                      <span key={`ongoing-${s}`} className="flex items-center gap-2">
+                        <span className="rounded border border-line px-1.5 py-0.5 font-mono text-[0.65rem] uppercase tracking-wide text-ink-soft">
+                          Ongoing
+                        </span>
+                        {s}
                       </span>
-                    )}
+                    ))}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          <p className="text-sm text-ink-soft">
+          <p className="mb-3 text-sm text-ink-soft">
             <span className="text-ink">Patient reported: </span>
             {symptomForm.rawSymptoms}
           </p>
-        </section>
-      )}
 
-      {/* Complete visit form */}
-      {appointment.status === "BOOKED" && (
+          {symptomForm.status === "READY" && (
+            <p className="font-mono text-[0.68rem] uppercase tracking-wide text-ink-soft">
+              AI-assisted · Doctor review required
+            </p>
+          )}
+        </section>
+  );
+
+  const consultForm = isConsultation && (
         <section>
           <p className="mb-4 font-mono text-xs uppercase tracking-wide text-ink-soft">Complete this visit</p>
 
@@ -365,7 +376,35 @@ export function DoctorAppointmentDetail() {
             </button>
           </div>
         </section>
-      )}
+  );
+
+  // Active consultation: a real two-column workspace — patient context
+  // (previous visit, AI brief) stays visible on the left while the doctor
+  // writes on the right, instead of scrolling back and forth on one column.
+  if (isConsultation) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-12">
+        <Link to="/doctor" className="mb-6 inline-block text-sm text-ink-soft hover:text-accent">
+          ← Back to today
+        </Link>
+        {header}
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_1.15fr]">
+          <div className="lg:sticky lg:top-8 lg:self-start">
+            {brief ?? <p className="text-ink-soft">No symptom form submitted for this visit yet.</p>}
+          </div>
+          <div>{consultForm}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl px-6 py-12">
+      <Link to="/doctor" className="mb-6 inline-block text-sm text-ink-soft hover:text-accent">
+        ← Back to today
+      </Link>
+      {header}
+      {brief}
     </div>
   );
 }
